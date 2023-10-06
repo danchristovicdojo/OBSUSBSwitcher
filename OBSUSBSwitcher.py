@@ -53,17 +53,23 @@ class MainWindow(wx.Frame):
         self.Show(True)
 
     def OnKeyDown(self, event=None):
-        kc = event.GetKeyCode() - 325
-        if kc in range(0, len(scenes)):
-            cl.set_current_program_scene(scenes[kc])
-            self.boxes[kc].SetBackgroundColour("gray")
-            if kc == self.previousActiveScene:
+        try:
+            int(event)
+        except:
+            event = int(event)
+        if event in range(0, len(scenes)):
+            cl.set_current_program_scene(scenes[event])
+            self.boxes[event].SetBackgroundColour("gray")
+            if event == self.previousActiveScene:
                 return    
             self.boxes[self.previousActiveScene].SetBackgroundColour("white")
-            self.previousActiveScene = kc
+            self.previousActiveScene = event
 
 
 if __name__ == "__main__":
     app = wx.App(False)
     gui = MainWindow(None, "OBS Switcher")
+    listener = keyboard.Listener(on_press=gui.OnKeyDown)
+    listener.start()  # start to listen on a separate thread
+    print("Listening")
     app.MainLoop()
