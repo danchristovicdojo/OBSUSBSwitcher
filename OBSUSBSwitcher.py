@@ -1,9 +1,30 @@
 import obsws_python as obs
 import threading
 import time
-import hid
 import wx
-
+import os
+ 
+if os.name == 'nt':
+    import pywinusb.hid as hid
+    for device in hid.find_all_hid_devices():
+        print(device)
+        if device.vendor_id == 0xf055 and device.product_id == 0x3534:
+            c = device
+            break
+else:
+    import hid
+windows_mapping = {
+    str([7, 1, 0]): 0,
+    str([7, 2, 0]): 1,
+    str([7, 4, 0]): 2,
+    str([7, 8, 0]): 3,
+    str([7, 16, 0]): 4,
+    str([7, 32, 0]): 5,
+    str([7, 64, 0]): 6,
+    str([7, 128, 0]): 7,
+    str([7, 0, 1]): 8
+}    
+ 
 mapping = {
     b'\x07\x01\x00': 0,
     b'\x07\x02\x00': 1,
@@ -15,19 +36,22 @@ mapping = {
     b'\x07\x80\x00': 7,
     b'\x07\x00\x01': 8,
 }
-
+ 
 vid = 0xf055	# Change it for your device
 pid = 0x3534	# Change it for your device
-
+ 
 class HidWatcher():
     def __init__(self, vid, pid, gui):
         self.vid = vid
         self.pid = pid
         self.gui = gui
-    
+ 
     def start(self):
-        threading.Thread(target=self.watch).start()
-
+        if os.name == 'nt':            
+            threading.Thread(target=self.watch_windows).start()
+        else:
+            threading.Thread(target=self.watch_macos).start()
+ 
     def updateGui(self, num):
         if type(num) != int:
             return
@@ -41,8 +65,10 @@ class HidWatcher():
             wx.CallAfter(self.gui.boxes[self.gui.previousActiveScene].SetBackgroundColour, "white")
             wx.CallAfter(self.gui.boxes[self.gui.previousActiveScene].Refresh)
             self.gui.previousActiveScene = num
-
-    def watch(self):
+    def windows_handler(self, data):
+        if str(data) in windows_mapping:
+            self.updateGui(windows_mapping[str(data)])
+    def watch_macos(self):
         while True:
             try:
                 wx.CallAfter(gui.show_usb_message, f"Trying to connect to USB Device {self.vid} {self.pid}")
@@ -55,12 +81,27 @@ class HidWatcher():
             except hid.HIDException:
                 wx.CallAfter(gui.show_usb_message, f"USB Device {self.vid} {self.pid} not connected.")
                 time.sleep(0.5)
-
-
-
-
+    def watch_windows(self):
+        wx.CallAfter(gui.show_usb_message, f"USB Device {self.vid} {self.pid} not connected.")
+        while True:
+            if not c.is_opened() or not c.is_plugged():
+                c.close()
+                while True:
+                    try:
+                        c.open()
+                        c.set_raw_data_handler(self.windows_handler)
+                        wx.CallAfter(gui.show_usb_message, f"Connected to USB Controller")
+                        break
+                    except Exception as e:
+                        wx.CallAfter(gui.show_usb_message, f"USB Device {self.vid} {self.pid} not connected. {e}")
+                        time.sleep(10)
+            time.sleep(1)
+ 
+ 
+ 
+ 
 # pass conn info if not in config.toml
-
+ 
 host = "192.168.23.58"
 port = 4455
 password = ""
@@ -73,7 +114,7 @@ def connect_obs():
     scenes = []
     for scene in scenesRaw:
         scenes.insert(0, scene["sceneName"])
-
+ 
 class MainWindow(wx.Frame):
     def __init__(self, parent, title):
         wx.Frame.__init__(self, parent, title=title, size=(400,400))
@@ -95,8 +136,8 @@ class MainWindow(wx.Frame):
             label="",
             size=(300, 100)
             )
-        
-        
+ 
+ 
         self.Show(True)
     def create_boxes(self):
         for i, scene in enumerate(reversed(scenes)):
@@ -120,8 +161,8 @@ class MainWindow(wx.Frame):
     def show_usb_message(self, e):
         self.usb_message.SetLabel(str(e))
     # def OnKeyDown(self, event=None):
-
-
+ 
+ 
 if __name__ == "__main__":
     app = wx.App(False)
     gui = MainWindow(None, "OBS Switcher")
@@ -141,5 +182,3 @@ if __name__ == "__main__":
     pad = HidWatcher(vid=vid, pid=pid, gui=gui)
     pad.start()
     app.MainLoop()
-    
-    
